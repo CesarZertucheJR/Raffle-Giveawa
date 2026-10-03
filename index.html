@@ -10,57 +10,53 @@
 <body>
   <header class="hero">
     <h1>🎁 Giveaway Wheel</h1>
-    <p>Log in, pick your giveaway posts, and everyone who <strong>commented</strong> goes on the wheel. Then spin for a winner!</p>
-    <p id="demoBanner" class="demo-banner" hidden>🧪 Demo mode: this uses pretend posts and comments. <a href="./">Leave demo</a></p>
+    <p>Grab the comments from your giveaway posts, and everyone who <strong>commented</strong> goes on the wheel. Then spin for a winner!</p>
   </header>
 
   <main>
     <!-- STEP 1 -->
     <section class="card">
-      <h2><span class="step">1</span> Log in</h2>
-      <div id="setupNeeded" class="notice" hidden>
-        <p><strong>Almost ready!</strong> This site needs a one-time setup before it can log in to Facebook.
-           Whoever set it up should follow <em>“One-time setup”</em> in the README.</p>
-        <p><a href="?demo">👉 Try the demo with pretend data</a></p>
-      </div>
-      <div id="loggedOut" hidden>
-        <p>One login covers your <strong>Facebook Page</strong> and the <strong>Instagram account</strong> linked to it.</p>
-        <button id="login" class="btn fb">Log in with Facebook</button>
-      </div>
-      <div id="loggedIn" hidden>
-        <div id="accounts" class="accounts"></div>
-        <button id="logout" class="btn link">Log out</button>
-      </div>
-      <p id="loginError" class="error" hidden></p>
+      <details id="setupBox" class="setup" open>
+        <summary><h2><span class="step">1</span> Add the “Grab comments” button <small>(one time only)</small></h2></summary>
+        <p>Use a <strong>computer</strong> for this (Chrome, Edge, Firefox or Safari).</p>
+        <ol class="big-steps">
+          <li>Make sure your <strong>bookmarks bar</strong> is showing at the top of the browser.
+            If it isn’t, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Windows) or <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac).</li>
+          <li>Click and hold this button, then <strong>drag it up onto the bookmarks bar</strong> and let go:
+            <div class="bm-wrap"><a id="bookmarklet" class="btn bm" href="#">🎁 Grab comments</a></div></li>
+          <li>That’s it! You’ll now see <strong>🎁 Grab comments</strong> in your bookmarks bar.</li>
+        </ol>
+        <details class="help">
+          <summary>Dragging doesn’t work?</summary>
+          <div class="help-body">
+            <ol>
+              <li>Click <button id="copyBookmarklet" class="btn secondary small">Copy the button</button></li>
+              <li>Right-click the bookmarks bar → <strong>Add page…</strong> (or <strong>Add bookmark</strong>).</li>
+              <li>Name it <em>Grab comments</em>, and in the <strong>URL</strong> box paste what you copied. Save.</li>
+            </ol>
+          </div>
+        </details>
+      </details>
     </section>
 
     <!-- STEP 2 -->
-    <section class="card" id="postsCard">
-      <h2><span class="step">2</span> Choose your giveaway posts</h2>
-      <div class="field">
-        <span>Paste a post link</span>
-        <div class="url-row">
-          <input id="link" type="url" placeholder="https://www.instagram.com/p/…  or  https://www.facebook.com/…">
-          <button id="addLink" class="btn">Add post</button>
-        </div>
-        <p id="linkMsg" class="hint"></p>
-      </div>
+    <section class="card">
+      <h2><span class="step">2</span> Grab the comments from each giveaway post</h2>
+      <ol class="big-steps">
+        <li>Open your giveaway post on <strong>instagram.com</strong> or <strong>facebook.com</strong> (be logged in like normal).
+          <span class="hint">On Facebook, click the post’s <em>date</em> so it opens by itself.</span></li>
+        <li>Click <strong>🎁 Grab comments</strong> in your bookmarks bar.</li>
+        <li>Wait while it opens all the comments, then click <strong>Send to Giveaway Wheel</strong>.</li>
+      </ol>
+      <p class="hint">Do this for each giveaway post. Doing it again on the same post just updates it with the newest comments.</p>
 
+      <h3 class="sub">Your giveaway posts</h3>
       <div id="selected" class="selected"></div>
-
-      <details id="pickerBox" class="help">
-        <summary>…or pick from your recent posts</summary>
-        <div id="picker" class="picker"></div>
-      </details>
-
-      <label class="field narrow">
-        <span>Only count comments made before <small>(optional, your giveaway deadline)</small></span>
-        <input id="deadline" type="datetime-local">
-      </label>
+      <button id="loadExample" class="btn link">Try it with example posts</button>
     </section>
 
     <!-- STEP 3 -->
-    <section class="card">
+    <section class="card" id="entrantsCard">
       <h2><span class="step">3</span> Check who’s entered</h2>
       <p id="summary" class="summary"></p>
 
@@ -76,7 +72,7 @@
         <textarea id="manual" rows="2" placeholder="Anyone the site missed"></textarea>
       </label>
       <label class="field">
-        <span>Leave out <small>(names to skip, separated by commas. Your own accounts are left out automatically)</small></span>
+        <span>Leave out <small>(names to skip, separated by commas. Your own comments are usually left out automatically)</small></span>
         <input id="exclude" type="text" placeholder="e.g. Aunt Rosa, @my_other_account">
       </label>
     </section>
@@ -112,8 +108,9 @@
   </div>
   <canvas id="confetti"></canvas>
 
-  <script src="config.js"></script>
-  <script src="meta.js"></script>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="grab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
