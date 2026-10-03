@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Giveaway Wheel</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎁</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <h1>🎁 Giveaway Wheel</h1>
+    <p>Add your posts, paste who liked and who commented, and spin to pick a winner.<br>
+       Only people who <strong>liked AND commented</strong> get on the wheel.</p>
+  </header>
+
+  <main>
+    <!-- STEP 1 -->
+    <section class="card">
+      <h2><span class="step">1</span> Add your posts</h2>
+
+      <details class="help">
+        <summary>❓ How do I copy the likes and comments?</summary>
+        <div class="help-body">
+          <p class="tip">Tip: this is easiest on a <strong>computer</strong> (not a phone), at instagram.com or facebook.com.</p>
+          <div class="help-cols">
+            <div>
+              <h3>📸 Instagram</h3>
+              <ol>
+                <li>Click <strong>Open post</strong> below the link.</li>
+                <li><strong>Likes:</strong> click the “<em>___ likes</em>” text under the photo. A list pops up. Scroll to the very bottom so everyone loads.
+                  Then click just before the first name, hold the mouse down, and drag to the last name. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> (<kbd>⌘</kbd>+<kbd>C</kbd> on Mac) and paste into the <em>Likes</em> box.</li>
+                <li><strong>Comments:</strong> keep clicking the <strong>⊕</strong> button until all comments show. Highlight them all the same way, copy, and paste into the <em>Comments</em> box.</li>
+              </ol>
+            </div>
+            <div>
+              <h3>👍 Facebook</h3>
+              <ol>
+                <li>Click <strong>Open post</strong> below the link.</li>
+                <li><strong>Likes:</strong> click the reaction icons/number (like 👍❤️ 25). A list pops up. Scroll to the bottom so everyone loads, then highlight, copy, and paste into the <em>Likes</em> box.</li>
+                <li><strong>Comments:</strong> change “Most relevant” to <strong>All comments</strong>, click “View more comments” until all are showing, then highlight, copy, and paste into the <em>Comments</em> box.</li>
+              </ol>
+            </div>
+          </div>
+          <p class="tip">Don’t worry about copying extra stuff like “Follow”, “Reply” or “2d”. The site ignores it.</p>
+        </div>
+      </details>
+
+      <div id="posts"></div>
+
+      <div class="row">
+        <button id="addPost" class="btn secondary">➕ Add another post</button>
+        <button id="loadExample" class="btn link">Try with example data</button>
+      </div>
+
+      <label class="field">
+        <span>Your own username(s) to leave out <small>(so you don’t win your own giveaway; separate with commas)</small></span>
+        <input id="exclude" type="text" placeholder="e.g. mom_bakes, Maria Lopez">
+      </label>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="card">
+      <h2><span class="step">2</span> Check who’s entered</h2>
+      <p id="summary" class="summary"></p>
+
+      <label class="check">
+        <input id="perPost" type="checkbox">
+        <span>Give an extra entry for each post they entered on (someone who entered on 2 posts gets 2 spots on the wheel)</span>
+      </label>
+
+      <div id="entrants" class="entrants"></div>
+
+      <details id="notMatchedBox" class="help">
+        <summary>Liked but no comment found (<span id="notMatchedCount">0</span>)</summary>
+        <div class="help-body">
+          <p class="tip">These people liked the post, but the site couldn’t find their comment. If you know they commented, add them below.</p>
+          <div id="notMatched" class="chips"></div>
+        </div>
+      </details>
+
+      <label class="field">
+        <span>Add someone by hand <small>(one name per line)</small></span>
+        <textarea id="manual" rows="2" placeholder="Anyone the site missed"></textarea>
+      </label>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="card wheel-card">
+      <h2><span class="step">3</span> Spin the wheel!</h2>
+      <div class="wheel-wrap">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="800" height="800"></canvas>
+        <button id="spin" class="spin-btn">SPIN</button>
+      </div>
+      <label class="check sound">
+        <input id="sound" type="checkbox" checked>
+        <span>🔊 Sound</span>
+      </label>
+      <div id="history" class="history"></div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <p class="modal-label">🎉 And the winner is… 🎉</p>
+      <p id="winnerName" class="winner-name"></p>
+      <p id="winnerSource" class="winner-source"></p>
+      <div class="row center">
+        <button id="removeAndClose" class="btn secondary">Remove winner &amp; spin again</button>
+        <button id="closeModal" class="btn">Done</button>
+      </div>
+    </div>
+  </div>
+  <canvas id="confetti"></canvas>
+
+  <template id="postTpl">
+    <div class="post">
+      <div class="post-head">
+        <span class="badge">🔗 Post</span>
+        <button class="remove link" title="Remove this post">✕ Remove</button>
+      </div>
+      <label class="field">
+        <span>Post link</span>
+        <div class="url-row">
+          <input class="url" type="url" placeholder="Paste the Instagram or Facebook post link here">
+          <a class="open btn secondary small" target="_blank" rel="noopener">Open post ↗</a>
+        </div>
+      </label>
+      <div class="two">
+        <label class="field">
+          <span>❤️ Likes <small>(paste the list of people who liked)</small></span>
+          <textarea class="likes" rows="6"></textarea>
+        </label>
+        <label class="field">
+          <span>💬 Comments <small>(paste all the comments)</small></span>
+          <textarea class="comments" rows="6"></textarea>
+        </label>
+      </div>
+      <p class="post-stats"></p>
+    </div>
+  </template>
+
+  <script src="parse.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
