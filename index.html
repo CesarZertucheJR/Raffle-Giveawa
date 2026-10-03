@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Giveaway Wheel</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎁</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <h1>🎁 Giveaway Wheel</h1>
+    <p>Log in, pick your giveaway posts, and everyone who <strong>commented</strong> goes on the wheel. Then spin for a winner!</p>
+    <p id="demoBanner" class="demo-banner" hidden>🧪 Demo mode: this uses pretend posts and comments. <a href="./">Leave demo</a></p>
+  </header>
+
+  <main>
+    <!-- STEP 1 -->
+    <section class="card">
+      <h2><span class="step">1</span> Log in</h2>
+      <div id="setupNeeded" class="notice" hidden>
+        <p><strong>Almost ready!</strong> This site needs a one-time setup before it can log in to Facebook.
+           Whoever set it up should follow <em>“One-time setup”</em> in the README.</p>
+        <p><a href="?demo">👉 Try the demo with pretend data</a></p>
+      </div>
+      <div id="loggedOut" hidden>
+        <p>One login covers your <strong>Facebook Page</strong> and the <strong>Instagram account</strong> linked to it.</p>
+        <button id="login" class="btn fb">Log in with Facebook</button>
+      </div>
+      <div id="loggedIn" hidden>
+        <div id="accounts" class="accounts"></div>
+        <button id="logout" class="btn link">Log out</button>
+      </div>
+      <p id="loginError" class="error" hidden></p>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="card" id="postsCard">
+      <h2><span class="step">2</span> Choose your giveaway posts</h2>
+      <div class="field">
+        <span>Paste a post link</span>
+        <div class="url-row">
+          <input id="link" type="url" placeholder="https://www.instagram.com/p/…  or  https://www.facebook.com/…">
+          <button id="addLink" class="btn">Add post</button>
+        </div>
+        <p id="linkMsg" class="hint"></p>
+      </div>
+
+      <div id="selected" class="selected"></div>
+
+      <details id="pickerBox" class="help">
+        <summary>…or pick from your recent posts</summary>
+        <div id="picker" class="picker"></div>
+      </details>
+
+      <label class="field narrow">
+        <span>Only count comments made before <small>(optional, your giveaway deadline)</small></span>
+        <input id="deadline" type="datetime-local">
+      </label>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="card">
+      <h2><span class="step">3</span> Check who’s entered</h2>
+      <p id="summary" class="summary"></p>
+
+      <label class="check">
+        <input id="perPost" type="checkbox">
+        <span>Give an extra entry for each post they commented on (someone who commented on 2 posts gets 2 spots on the wheel)</span>
+      </label>
+
+      <div id="entrants" class="entrants"></div>
+
+      <label class="field">
+        <span>Add someone by hand <small>(one name per line)</small></span>
+        <textarea id="manual" rows="2" placeholder="Anyone the site missed"></textarea>
+      </label>
+      <label class="field">
+        <span>Leave out <small>(names to skip, separated by commas. Your own accounts are left out automatically)</small></span>
+        <input id="exclude" type="text" placeholder="e.g. Aunt Rosa, @my_other_account">
+      </label>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="card wheel-card">
+      <h2><span class="step">4</span> Spin the wheel!</h2>
+      <div class="wheel-wrap">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="800" height="800"></canvas>
+        <button id="spin" class="spin-btn">SPIN</button>
+      </div>
+      <label class="check sound">
+        <input id="sound" type="checkbox" checked>
+        <span>🔊 Sound</span>
+      </label>
+      <div id="history" class="history"></div>
+    </section>
+  </main>
+
+  <footer class="foot"><a href="privacy.html">Privacy</a></footer>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <p class="modal-label">🎉 And the winner is… 🎉</p>
+      <p id="winnerName" class="winner-name"></p>
+      <p id="winnerSource" class="winner-source"></p>
+      <div class="row center">
+        <button id="removeAndClose" class="btn secondary">Remove winner &amp; spin again</button>
+        <button id="closeModal" class="btn">Done</button>
+      </div>
+    </div>
+  </div>
+  <canvas id="confetti"></canvas>
+
+  <script src="config.js"></script>
+  <script src="meta.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
