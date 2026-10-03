@@ -1,88 +1,263 @@
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
-  const STORE = 'giveaway-wheel-v1';
+  const STORE = 'giveaway-wheel-v2';
+  const src = Meta.source;
+
+  // Normalise a name for comparing: no "@", no extra spaces, lower case.
+  const key = s => String(s || '').replace(/[​-‏﻿]/g, '').trim().replace(/^@/, '').replace(/\s+/g, ' ').toLowerCase();
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ICON = { instagram: '📸', facebook: '👍' };
+  const SITE = { instagram: 'Instagram', facebook: 'Facebook' };
 
   // ---------- State (saved in this browser so a refresh doesn't lose anything) ----------
-  const blankPost = () => ({ url: '', likes: '', comments: '' });
-  let state = load() || {
-    posts: [blankPost()],
+  const defaults = () => ({
+    selected: [],   // posts chosen for the giveaway
+    comments: {},   // post.key → [{authorId, author, text, time}]
+    ownIds: [],     // her own accounts, never entered
+    deadline: '',
     exclude: '',
     manual: '',
     perPost: false,
-    unchecked: [],  // keys of people she unticked
-    winners: [],    // {name, at}
-  };
+    unchecked: [],  // person keys she unticked
+    winners: [],    // {name, personKey, at, removed}
+  });
+  let state = Object.assign(defaults(), load(src && src.demo ? STORE + '-demo' : STORE));
 
-  function load() {
-    try { return JSON.parse(localStorage.getItem(STORE)); } catch { return null; }
+  function load(k) {
+    try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; }
   }
   function save() {
-    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* private mode */ }
+    try { localStorage.setItem(src && src.demo ? STORE + '-demo' : STORE, JSON.stringify(state)); } catch { /* private mode */ }
   }
 
-  // ---------- Posts ----------
-  const postsEl = $('#posts');
-  const tpl = $('#postTpl');
+  // ---------- Step 1: login ----------
+  let recent = [];          // her recent posts from all connected accounts
+  let recentLimit = 60;
 
-  function renderPosts() {
-    postsEl.innerHTML = '';
-    state.posts.forEach((post, i) => {
-      const el = tpl.content.firstElementChild.cloneNode(true);
-      const url = $('.url', el), likes = $('.likes', el), comments = $('.comments', el);
-      url.value = post.url;
-      likes.value = post.likes;
-      comments.value = post.comments;
-      $('.remove', el).hidden = state.posts.length === 1;
+  function show(id, on) { $(id).hidden = !on; }
 
-      const onInput = () => {
-        post.url = url.value.trim();
-        post.likes = likes.value;
-        post.comments = comments.value;
-        updatePostHeader(el, post, i);
-        recompute();
-      };
-      [url, likes, comments].forEach(f => f.addEventListener('input', onInput));
-      $('.remove', el).addEventListener('click', () => {
-        if (!confirm('Remove this post?')) return;
-        state.posts.splice(i, 1);
-        renderPosts();
-        recompute();
-      });
-      updatePostHeader(el, post, i);
-      postsEl.appendChild(el);
-    });
-  }
-
-  function updatePostHeader(el, post, i) {
-    const platform = Parse.detectPlatform(post.url);
-    const label = { instagram: '📸 Instagram', facebook: '👍 Facebook', unknown: '🔗' }[platform];
-    $('.badge', el).textContent = `${label} post ${i + 1}`;
-    $('.badge', el).dataset.platform = platform;
-    const open = $('.open', el);
-    if (/^https?:\/\//i.test(post.url)) { open.href = post.url; open.classList.remove('disabled'); }
-    else { open.removeAttribute('href'); open.classList.add('disabled'); }
-
-    const r = Parse.matchPost(post);
-    const stats = $('.post-stats', el);
-    if (!post.likes.trim() && !post.comments.trim()) {
-      stats.textContent = '';
-    } else if (!post.likes.trim()) {
-      stats.textContent = '👉 Now paste the likes list.';
-    } else if (!post.comments.trim()) {
-      stats.textContent = `Found ${r.likers.length} people who liked. 👉 Now paste the comments.`;
-    } else {
-      stats.innerHTML = `Found <b>${r.likers.length}</b> who liked → <b>${r.both.length}</b> of them also commented ✅`;
+  async function start() {
+    if (src && src.demo) show('#demoBanner', true);
+    if (!src) {
+      show('#setupNeeded', true);
+      renderSelected();
+      return;
+    }
+    try {
+      const ok = await src.init();
+      ok ? await afterLogin() : showLoggedOut();
+    } catch (e) {
+      showLoggedOut();
+      loginError(e.message);
     }
   }
 
-  $('#addPost').addEventListener('click', () => {
-    state.posts.push(blankPost());
-    renderPosts();
-    save();
-    postsEl.lastElementChild.querySelector('.url').focus();
+  function showLoggedOut() {
+    show('#loggedOut', true);
+    show('#loggedIn', false);
+    renderSelected();
+    renderPicker();
+  }
+
+  function loginError(msg) {
+    $('#loginError').textContent = msg || '';
+    show('#loginError', !!msg);
+  }
+
+  $('#login').addEventListener('click', async () => {
+    loginError('');
+    $('#login').disabled = true;
+    try {
+      await src.login();
+      await afterLogin();
+    } catch (e) {
+      loginError(e.message);
+    } finally {
+      $('#login').disabled = false;
+    }
   });
 
-  // ---------- Entrants ----------
+  $('#logout').addEventListener('click', async () => {
+    await src.logout();
+    recent = [];
+    showLoggedOut();
+  });
+
+  async function afterLogin() {
+    const accts = src.accounts();
+    show('#loggedOut', false);
+    show('#loggedIn', true);
+    state.ownIds = [...new Set([...state.ownIds, ...accts.map(a => (a.platform === 'instagram' ? a.username.toLowerCase() : a.id))])];
+    save();
+
+    const box = $('#accounts');
+    if (!accts.length) {
+      box.innerHTML = '<p class="error">You’re logged in, but no Facebook Page was found. Log out and log in again, and make sure your Page (and Instagram) are ticked when Facebook asks.</p>';
+    } else {
+      box.innerHTML = '<p>✅ Connected:</p>' + accts.map(a => `<span class="acct ${a.platform}">${ICON[a.platform]} ${escapeHtml(a.name)}</span>`).join('');
+      if (!accts.some(a => a.platform === 'instagram')) {
+        box.innerHTML += '<p class="hint">No Instagram found. Instagram only works if it’s a <strong>Professional</strong> (Business or Creator) account connected to your Facebook Page.</p>';
+      }
+    }
+    await loadRecent();
+    renderSelected();
+    // Refresh comments on posts chosen in an earlier visit.
+    refreshAll();
+  }
+
+  async function loadRecent() {
+    const lists = await Promise.all(src.accounts().map(a => src.recentPosts(a, recentLimit).catch(() => [])));
+    recent = lists.flat().sort((a, b) => new Date(b.time) - new Date(a.time));
+    renderPicker();
+  }
+
+  // ---------- Step 2: choose posts ----------
+  const linkEl = $('#link');
+  const linkMsg = msg => { $('#linkMsg').innerHTML = msg || ''; };
+
+  $('#addLink').addEventListener('click', addFromLink);
+  linkEl.addEventListener('keydown', e => { if (e.key === 'Enter') addFromLink(); });
+
+  async function addFromLink() {
+    const url = linkEl.value.trim();
+    if (!url) return;
+    const platform = Meta.platformOf(url);
+    if (!platform) return linkMsg('That doesn’t look like an Instagram or Facebook link.');
+    if (!src || !src.accounts().length) return linkMsg('Log in first (step 1).');
+    if (!src.accounts().some(a => a.platform === platform)) {
+      return linkMsg(platform === 'instagram'
+        ? 'No Instagram account is connected. See the note in step 1.'
+        : 'No Facebook Page is connected.');
+    }
+    if (/\/share\//.test(url)) {
+      return linkMsg('That’s a “share” link. Open it, then copy the link from your browser’s address bar instead. Or pick the post from the list below.');
+    }
+    linkMsg('Looking for that post…');
+    let post = Meta.matchLink(url, recent);
+    if (!post && recentLimit < 300) {
+      recentLimit = 300; // look further back
+      await loadRecent();
+      post = Meta.matchLink(url, recent);
+    }
+    if (!post) {
+      $('#pickerBox').open = true;
+      return linkMsg('Couldn’t find that post on your account. Pick it from your recent posts below instead.');
+    }
+    linkEl.value = '';
+    linkMsg('');
+    addPost(post);
+  }
+
+  function addPost(post) {
+    if (state.selected.some(p => p.key === post.key)) return;
+    state.selected.push(post);
+    save();
+    renderSelected();
+    renderPicker();
+    fetchComments(post);
+  }
+
+  function removePost(post) {
+    state.selected = state.selected.filter(p => p.key !== post.key);
+    delete state.comments[post.key];
+    renderSelected();
+    renderPicker();
+    recompute();
+  }
+
+  const loading = new Set();
+  const errors = {};
+
+  async function fetchComments(post) {
+    if (!src || !src.accounts().length) return;
+    loading.add(post.key);
+    delete errors[post.key];
+    renderSelected();
+    try {
+      state.comments[post.key] = await src.comments(post);
+    } catch (e) {
+      errors[post.key] = e.message;
+    }
+    loading.delete(post.key);
+    renderSelected();
+    recompute();
+  }
+
+  function refreshAll() {
+    state.selected.forEach(fetchComments);
+  }
+
+  function inTime(c) {
+    return !state.deadline || !c.time || new Date(c.time) < new Date(state.deadline);
+  }
+
+  function renderSelected() {
+    const box = $('#selected');
+    box.innerHTML = '';
+    if (!state.selected.length) {
+      box.innerHTML = '<p class="hint">No posts chosen yet.</p>';
+      return;
+    }
+    for (const post of state.selected) {
+      const list = state.comments[post.key] || [];
+      const others = list.filter(c => !state.ownIds.includes(c.authorId));
+      const counted = others.filter(c => c.author && inTime(c));
+      const hidden = others.filter(c => !c.author).length;
+      const late = others.filter(c => c.author && !inTime(c)).length;
+      const people = new Set(counted.map(c => c.authorId)).size;
+
+      let status;
+      if (loading.has(post.key)) status = '⏳ Getting comments…';
+      else if (errors[post.key]) status = `<span class="error">⚠️ ${escapeHtml(errors[post.key])}</span>`;
+      else if (!state.comments[post.key]) status = 'Log in to get the comments.';
+      else {
+        status = `💬 <b>${counted.length}</b> comments from <b>${people}</b> ${people === 1 ? 'person' : 'people'}`;
+        if (late) status += ` · ${late} after the deadline`;
+        if (hidden) status += ` · ${hidden} hidden by Facebook privacy`;
+      }
+
+      const el = document.createElement('div');
+      el.className = 'sel';
+      el.innerHTML = `
+        ${post.thumb ? `<img src="${escapeHtml(post.thumb)}" alt="">` : '<div class="noimg">' + ICON[post.platform] + '</div>'}
+        <div class="sel-body">
+          <div class="sel-title">${ICON[post.platform]} ${SITE[post.platform]} · ${new Date(post.time).toLocaleDateString()}
+            <a href="${escapeHtml(post.permalink)}" target="_blank" rel="noopener">open ↗</a></div>
+          <div class="sel-caption">${escapeHtml(post.caption.slice(0, 120)) || '<em>No caption</em>'}</div>
+          <div class="sel-status">${status}</div>
+        </div>
+        <div class="sel-actions">
+          <button class="btn link refresh" title="Get the newest comments">↻ Refresh</button>
+          <button class="btn link remove" title="Remove this post">✕ Remove</button>
+        </div>`;
+      $('.refresh', el).addEventListener('click', () => fetchComments(post));
+      $('.remove', el).addEventListener('click', () => removePost(post));
+      box.appendChild(el);
+    }
+  }
+
+  function renderPicker() {
+    const box = $('#picker');
+    box.innerHTML = '';
+    show('#pickerBox', recent.length > 0);
+    for (const post of recent) {
+      const chosen = state.selected.some(p => p.key === post.key);
+      const b = document.createElement('button');
+      b.className = 'pick' + (chosen ? ' chosen' : '');
+      b.innerHTML = `
+        ${post.thumb ? `<img src="${escapeHtml(post.thumb)}" alt="">` : '<div class="noimg">' + ICON[post.platform] + '</div>'}
+        <span class="pick-meta">${ICON[post.platform]} ${new Date(post.time).toLocaleDateString()}${chosen ? ' · ✅ added' : ''}</span>
+        <span class="pick-caption">${escapeHtml(post.caption.slice(0, 70)) || '<em>No caption</em>'}</span>`;
+      b.addEventListener('click', () => (chosen ? removePost(post) : addPost(post)));
+      box.appendChild(b);
+    }
+  }
+
+  const deadlineEl = $('#deadline');
+  deadlineEl.value = state.deadline;
+  deadlineEl.addEventListener('change', () => { state.deadline = deadlineEl.value; renderSelected(); recompute(); });
+
+  // ---------- Step 3: entrants ----------
   const excludeEl = $('#exclude'), manualEl = $('#manual'), perPostEl = $('#perPost');
   excludeEl.value = state.exclude;
   manualEl.value = state.manual;
@@ -91,50 +266,49 @@
   manualEl.addEventListener('input', () => { state.manual = manualEl.value; recompute(); });
   perPostEl.addEventListener('change', () => { state.perPost = perPostEl.checked; recompute(); });
 
-  let people = [];   // [{key, name, posts:[i], manual}]
+  let people = [];   // [{key, name, platform, posts:[postKey], comments, manual, active}]
   let entries = [];  // names on the wheel (with repeats when perPost)
 
   function recompute() {
-    const excluded = new Set(state.exclude.split(',').map(Parse.key).filter(Boolean));
-    const winnersRemoved = new Set(state.winners.filter(w => w.removed).map(w => Parse.key(w.name)));
+    const excluded = new Set(state.exclude.split(',').map(key).filter(Boolean));
+    const own = new Set(state.ownIds);
+    const removed = new Set(state.winners.filter(w => w.removed).map(w => w.personKey));
     const map = new Map();
-    const likedOnly = new Map();
 
-    state.posts.forEach((post, i) => {
-      const r = Parse.matchPost(post);
-      r.both.forEach(name => {
-        const k = Parse.key(name);
-        if (excluded.has(k)) return;
-        if (!map.has(k)) map.set(k, { key: k, name, posts: [], manual: false });
-        map.get(k).posts.push(i);
-      });
-      r.likedOnly.forEach(name => {
-        const k = Parse.key(name);
-        if (!excluded.has(k)) likedOnly.set(k, name);
-      });
-    });
-    state.manual.split(/\r?\n/).map(Parse.clean).filter(Boolean).forEach(name => {
-      const k = Parse.key(name);
-      if (!map.has(k)) map.set(k, { key: k, name, posts: [], manual: true });
-    });
-    for (const k of map.keys()) likedOnly.delete(k);
+    for (const post of state.selected) {
+      for (const c of state.comments[post.key] || []) {
+        if (!c.author || !c.authorId || own.has(c.authorId) || !inTime(c)) continue;
+        if (excluded.has(key(c.author))) continue;
+        const k = post.platform + ':' + c.authorId;
+        if (!map.has(k)) map.set(k, { key: k, name: c.author, platform: post.platform, posts: [], comments: 0, manual: false });
+        const p = map.get(k);
+        p.comments++;
+        if (!p.posts.includes(post.key)) p.posts.push(post.key);
+      }
+    }
+    for (const line of state.manual.split(/\r?\n/)) {
+      const name = line.trim();
+      const k = 'manual:' + key(name);
+      if (name && !excluded.has(key(name)) && !map.has(k)) map.set(k, { key: k, name, platform: null, posts: [], comments: 0, manual: true });
+    }
 
-    people = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    people = [...map.values()].sort((a, b) => key(a.name).localeCompare(key(b.name)));
     const unchecked = new Set(state.unchecked);
     entries = [];
     for (const p of people) {
-      p.active = !unchecked.has(p.key) && !winnersRemoved.has(p.key);
+      p.won = removed.has(p.key);
+      p.active = !unchecked.has(p.key) && !p.won;
       if (!p.active) continue;
       const n = state.perPost ? Math.max(1, p.posts.length) : 1;
-      for (let j = 0; j < n; j++) entries.push(p.name);
+      for (let j = 0; j < n; j++) entries.push(p);
     }
 
-    renderEntrants(likedOnly, winnersRemoved);
+    renderEntrants();
     save();
     drawWheel();
   }
 
-  function renderEntrants(likedOnly, winnersRemoved) {
+  function renderEntrants() {
     const box = $('#entrants');
     box.innerHTML = '';
     const active = people.filter(p => p.active).length;
@@ -142,16 +316,16 @@
       ? `<b>${active}</b> ${active === 1 ? 'person' : 'people'} on the wheel` +
         (entries.length !== active ? ` (<b>${entries.length}</b> spots)` : '') +
         '. Untick anyone who shouldn’t be in it.'
-      : 'Nobody yet. Paste the likes and comments for a post above and entrants will show up here.';
+      : 'Nobody yet. Choose a post in step 2 and everyone who commented will show up here.';
 
     for (const p of people) {
       const label = document.createElement('label');
       label.className = 'entrant' + (p.active ? '' : ' off');
+      label.title = p.comments ? `${p.comments} comment${p.comments === 1 ? '' : 's'}` : '';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = p.active;
-      const won = winnersRemoved.has(p.key);
-      cb.disabled = won;
+      cb.disabled = p.won;
       cb.addEventListener('change', () => {
         const set = new Set(state.unchecked);
         cb.checked ? set.delete(p.key) : set.add(p.key);
@@ -159,29 +333,12 @@
         recompute();
       });
       const span = document.createElement('span');
-      span.textContent = p.name;
+      span.textContent = (p.platform ? ICON[p.platform] + ' ' : '') + p.name;
       label.append(cb, span);
-      if (won) label.append(tag('🏆 won'));
+      if (p.won) label.append(tag('🏆 won'));
       else if (p.manual) label.append(tag('added'));
       else if (state.perPost && p.posts.length > 1) label.append(tag(`×${p.posts.length}`));
       box.appendChild(label);
-    }
-
-    $('#notMatchedCount').textContent = likedOnly.size;
-    $('#notMatchedBox').hidden = likedOnly.size === 0;
-    const chips = $('#notMatched');
-    chips.innerHTML = '';
-    for (const name of [...likedOnly.values()].sort((a, b) => a.localeCompare(b))) {
-      const b = document.createElement('button');
-      b.className = 'chip';
-      b.textContent = '+ ' + name;
-      b.title = 'Add to the wheel';
-      b.addEventListener('click', () => {
-        manualEl.value = (manualEl.value.trim() ? manualEl.value.trim() + '\n' : '') + name;
-        state.manual = manualEl.value;
-        recompute();
-      });
-      chips.appendChild(b);
     }
   }
 
@@ -250,9 +407,10 @@
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(rotation + (i + 0.5) * seg);
-        let label = entries[i];
+        const full = entries[i].name;
+        let label = full;
         while (label.length > 1 && ctx.measureText(label).width > maxW) label = label.slice(0, -1);
-        if (label !== entries[i]) label = label.slice(0, -1) + '…';
+        if (label !== full) label = label.slice(0, -1) + '…';
         ctx.fillText(label, R - 22, 0);
         ctx.restore();
       }
@@ -282,7 +440,7 @@
     if (spinning) return;
     const n = entries.length;
     if (n < 2) {
-      alert(n ? 'Add at least 2 people to spin.' : 'Nobody is on the wheel yet. Add a post in step 1.');
+      alert(n ? 'Add at least 2 people to spin.' : 'Nobody is on the wheel yet. Choose a post in step 2.');
       return;
     }
     spinning = true;
@@ -350,21 +508,22 @@
   const modal = $('#modal');
   let currentWinner = null;
 
-  function announce(name) {
-    currentWinner = { name, at: new Date().toISOString(), removed: false };
+  function announce(p) {
+    currentWinner = { name: p.name, personKey: p.key, at: new Date().toISOString(), removed: false };
     state.winners.push(currentWinner);
     save();
     renderHistory();
 
-    const p = people.find(x => x.key === Parse.key(name));
-    const sources = p && p.posts.length
-      ? 'Entered on: ' + p.posts.map(i => {
-          const pl = Parse.detectPlatform(state.posts[i].url);
-          return `${pl === 'instagram' ? 'Instagram' : pl === 'facebook' ? 'Facebook' : ''} post ${i + 1}`.trim();
-        }).join(', ')
-      : '';
-    $('#winnerName').textContent = name;
-    $('#winnerSource').textContent = sources;
+    // Show their comment(s) so it's easy to find them and congratulate them.
+    const lines = [];
+    for (const post of state.selected) {
+      if (!p.posts.includes(post.key)) continue;
+      const c = (state.comments[post.key] || []).find(c => post.platform + ':' + c.authorId === p.key && inTime(c));
+      lines.push(`<li>${ICON[post.platform]} <a href="${escapeHtml(post.permalink)}" target="_blank" rel="noopener">${SITE[post.platform]} post</a>` +
+        (c && c.text ? `: “${escapeHtml(c.text.slice(0, 100))}”` : '') + '</li>');
+    }
+    $('#winnerName').textContent = p.name;
+    $('#winnerSource').innerHTML = lines.length ? `<ul>${lines.join('')}</ul>` : '';
     modal.classList.remove('hidden');
     fanfare();
     confetti();
@@ -433,28 +592,8 @@
     })(t0);
   }
 
-  // ---------- Example data ----------
-  $('#loadExample').addEventListener('click', () => {
-    const hasData = state.posts.some(p => p.likes.trim() || p.comments.trim());
-    if (hasData && !confirm('Replace what you have with example data?')) return;
-    state.posts = [
-      {
-        url: 'https://www.instagram.com/p/EXAMPLE/',
-        likes: "sunny.days's profile picture\nsunny.days\nSunny Day\nFollow\nbakerbella's profile picture\nbakerbella\nBella Baker\nFollowing\ntaco_tuesday's profile picture\ntaco_tuesday\nFollow\njoe.garcia's profile picture\njoe.garcia\nJoe Garcia\nFollow\nlil_lulu's profile picture\nlil_lulu\nFollow\nmark_the_shark's profile picture\nmark_the_shark\nFollow",
-        comments: 'sunny.days\n2d\nI want this so bad!! @lil_lulu\nReply\nbakerbella\nVerified\n2d\nEntered 🤞\n1 like\nReply\njoe.garcia\n1d\nPick me!!\nReply\nmark_the_shark\n5h\n🔥🔥🔥\nReply\nnot_a_liker\n3h\nyay\nReply',
-      },
-      {
-        url: 'https://www.facebook.com/photo/?fbid=EXAMPLE',
-        likes: 'Maria Lopez\nAdd friend\nJoe Garcia\nMessage\nAunt Rosa\n3 mutual friends\nAdd friend\nDanny Ruiz\nAdd friend',
-        comments: 'Maria Lopez\nCount me in! ❤️\n2d\nLike\nReply\nAunt Rosa\nTop fan\nSo pretty!!\n1d\nLike\nReply\nJoe Garcia\nMe me me 😄\n5h\nLike\nReply',
-      },
-    ];
-    renderPosts();
-    recompute();
-  });
-
   // ---------- Start ----------
-  renderPosts();
   renderHistory();
   recompute();
+  start();
 })();
